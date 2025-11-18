@@ -45,7 +45,7 @@ where
 
     fn find_x0(&self) -> DVector<T> {
         let nrows = 3 + self.xs.len() + self.ys.len();
-        let mut x0 = DVector::from_element(nrows, T::from_f64(100.0).unwrap());
+        let mut x0 = DVector::from_element(nrows, T::from_f64(1e4).unwrap());
         x0[0] = T::one();
         x0[1] = T::one();
         x0[2] = T::zero();
