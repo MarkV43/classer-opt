@@ -3,7 +3,7 @@ use std::{fmt::Debug, iter::Sum};
 use ipm::{
     ConvexConstraints, CostFunction, Gradient, Hessian, LinearConstraints,
     alg::{
-        barrier::{BarrierParams, barrier_method},
+        barrier::{BarrierParams, barrier_method, barrier_method_infeasible},
         newton::NewtonsMethodSolution,
     },
 };
@@ -32,24 +32,21 @@ where
         + Inv<Output = T>
         + FromPrimitive,
 {
-    pub fn solve(&mut self, params: &BarrierParams<T>) -> ([T; 2], T) {
-        let x0 = self.find_x0();
+    pub fn solve(
+        &mut self,
+        params: &BarrierParams<T>,
+        aux_params: &BarrierParams<T>,
+    ) -> ([T; 2], T) {
+        let dims = self.dims();
+        let x0 = DVector::zeros(dims);
 
-        let sol: NewtonsMethodSolution<T> = barrier_method(self, &x0, params);
+        let sol: NewtonsMethodSolution<T> =
+            barrier_method_infeasible(self, &x0, params, aux_params);
 
         let a = [sol.arg[0], sol.arg[1]];
         let b = sol.arg[2];
 
         (a, b)
-    }
-
-    fn find_x0(&self) -> DVector<T> {
-        let nrows = 3 + self.xs.len() + self.ys.len();
-        let mut x0 = DVector::from_element(nrows, T::from_f64(1e4).unwrap());
-        x0[0] = T::one();
-        x0[1] = T::one();
-        x0[2] = T::zero();
-        x0
     }
 }
 
@@ -280,11 +277,15 @@ mod tests {
             gamma: 1.0f64,
         };
 
-        let lsp = LineSearchParams::new(0.3, 0.6);
-        let center = NewtonParams::new(1e-1, lsp, 8, 20);
-        let params = BarrierParams::new(10.0, 30.0, 1e-3, center);
+        let lsp = LineSearchParams::new(0.3, 0.7);
 
-        let (a, b) = prob.solve(&params);
+        let center = NewtonParams::new(1e-8, lsp.clone(), 128, 1024);
+        let params = BarrierParams::new(1.0, 10.0, 1e-3, center);
+
+        let aux_center = NewtonParams::new(1e-5, lsp, 4, 16);
+        let aux_params = BarrierParams::new(1e-3, 10.0, 1e-1, aux_center);
+
+        let (a, b) = prob.solve(&params, &aux_params);
 
         assert!((a[0] + 2.0).abs() < 1e-3); // we specified a tolerance of 1e-3
         assert!((a[1] + 0.0).abs() < 1e-3);
