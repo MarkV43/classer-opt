@@ -137,7 +137,7 @@ checksum = "bd47b05dddf0005d850e5644cae7f2b14ac3df487979dbfff3b56f20b1a6ae46"
 [[package]]
 name = "ipm"
 version = "0.1.0"
-source = "git+https://github.com/MarkV43/ipm.git#02bd38bc7a3e5356c56c40a9ac530cf5d8b60caf"
+source = "git+https://github.com/MarkV43/ipm.git#f83a70cde1db392a21a4a17da625352d6923b47c"
 dependencies = [
  "fastrand",
  "nalgebra",
@@ -299,9 +299,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.110"
+version = "2.0.111"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a99801b5bd34ede4cf3fc688c5919368fea4e4814a4664359503e6015b280aea"
+checksum = "390cc9a294ab71bdb1aa2e99d13be9c753cd2d7bd6560c77118597410c4d2e87"
 dependencies = [
  "proc-macro2",
  "quote",

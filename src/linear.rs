@@ -156,7 +156,7 @@ impl<T> ConvexConstraints for LinearDP<T>
 where
     T: Copy + Scalar + ComplexField<RealField = T>,
 {
-    fn number_of_constraints(&self) -> usize {
+    fn num_convex_constraints(&self) -> usize {
         2 * (self.xs.len() + self.ys.len())
     }
 
@@ -245,12 +245,20 @@ impl<T> LinearConstraints for LinearDP<T>
 where
     T: Copy + Scalar + ComplexField<RealField = T>,
 {
-    fn mat_a(&self) -> DMatrix<Self::F> {
-        DMatrix::zeros(0, self.dims())
+    fn num_linear_constraints(&self) -> usize {
+        0
     }
 
-    fn vec_b(&self) -> DVector<Self::F> {
-        DVector::zeros(0)
+    fn mat_a<S>(&self, _out: &mut Matrix<Self::F, Dyn, Dyn, S>)
+    where
+        S: StorageMut<Self::F, Dyn, Dyn>,
+    {
+    }
+
+    fn vec_b<S>(&self, _out: &mut Vector<Self::F, Dyn, S>)
+    where
+        S: StorageMut<Self::F, Dyn>,
+    {
     }
 }
 
