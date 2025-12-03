@@ -2,14 +2,10 @@ use std::{fmt::Debug, iter::Sum};
 
 use ipm::{
     ConvexConstraints, CostFunction, Gradient, Hessian, LinearConstraints,
-    alg::{
-        barrier::{BarrierParams, barrier_method, barrier_method_infeasible},
-        newton::NewtonsMethodSolution,
-    },
+    alg::ipm::{InteriorPointMethod, IpmSolution, infeasible::InfeasibleIpm},
 };
 use nalgebra::{
-    ComplexField, Const, DMatrix, DVector, Dyn, Matrix, RawStorage, Scalar, StorageMut, Vector,
-    Vector2,
+    ComplexField, Const, DVector, Dyn, Matrix, RawStorage, Scalar, StorageMut, Vector, Vector2,
 };
 use num_traits::{Float, FromPrimitive, Inv, Num, NumAssign, real::Real};
 
@@ -32,21 +28,20 @@ where
         + Inv<Output = T>
         + FromPrimitive,
 {
-    pub fn solve(
-        &mut self,
-        params: &BarrierParams<T>,
-        aux_params: &BarrierParams<T>,
-    ) -> ([T; 2], T) {
+    pub fn solve<I1, I2>(&mut self, solver: &InfeasibleIpm<I1, I2>) -> Result<([T; 2], T), String>
+    where
+        I1: InteriorPointMethod<F = T>,
+        I2: InteriorPointMethod<F = T>,
+    {
         let dims = self.dims();
-        let x0 = DVector::zeros(dims);
+        let x0 = DVector::from_element(dims, T::one());
 
-        let sol: NewtonsMethodSolution<T> =
-            barrier_method_infeasible(self, &x0, params, aux_params);
+        let sol: IpmSolution<T> = solver.optimize(self, &x0)?;
 
         let a = [sol.arg[0], sol.arg[1]];
         let b = sol.arg[2];
 
-        (a, b)
+        Ok((a, b))
     }
 }
 
@@ -65,7 +60,8 @@ where
         let u = param.rows(3, self.xs.len());
         let v = param.rows(3 + self.xs.len(), self.ys.len());
 
-        *out = a.norm() + self.gamma * (u.sum() + v.sum())
+        let half = T::from_f64(0.5).unwrap();
+        *out = half * a.norm_squared() + self.gamma * (u.sum() + v.sum())
     }
 
     fn dims(&self) -> usize {
@@ -93,11 +89,7 @@ where
         let ny = self.ys.len();
 
         // gradient wrt a: a / ||a||  (choose 0 when ||a|| == 0)
-        let norm_a = a.norm();
-        if norm_a != T::zero() {
-            let grad_a = &a / norm_a;
-            out.rows_mut(0, 2).copy_from(&grad_a);
-        } // else leave zeros (subgradient choice)
+        out.rows_mut(0, 2).copy_from(&a);
 
         // b has no contribution -> gradient 0 (already zero)
 
@@ -129,23 +121,11 @@ where
     {
         out.fill(T::zero());
 
-        // Only a-block (top-left 2x2) is nonzero:
-        // H_a = (I / ||a||) - (a a^T / ||a||^3)
-        let a = _param.rows(0, 2).into_owned();
-        let norm_a = a.norm();
+        // FIX: Hessian is simply Identity for 'a'
+        let mut block = out.view_mut((0, 0), (2, 2));
+        block.fill_diagonal(T::one());
 
-        if norm_a != T::zero() {
-            // build 2x2 identity and aa^T
-            let i2 = DMatrix::identity(2, 2);
-            let aa_t = &a * a.transpose(); // 2x2
-
-            let ha = (&i2) / norm_a - (&aa_t) / (norm_a * norm_a * norm_a);
-
-            // copy ha into top-left block of h
-            let mut block = out.view_mut((0, 0), (2, 2));
-            block.copy_from(&ha);
-        }
-        // all other second derivatives are zero because cost is linear in b,u,v and uses only ||a|| for quadratic part.
+        // The rest remains zero (linear terms have 0 second derivative)
     }
 }
 
@@ -261,7 +241,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ipm::alg::{barrier::BarrierParams, line_search::LineSearchParams, newton::NewtonParams};
+    use ipm::alg::{
+        descent::newton::NewtonsMethod,
+        ipm::{barrier::BarrierMethod, infeasible::InfeasibleIpm},
+        line_search::guarded::GuardedLineSearch,
+    };
     use nalgebra::Vector2;
 
     use crate::linear::LinearDP;
@@ -277,15 +261,17 @@ mod tests {
             gamma: 1.0f64,
         };
 
-        let lsp = LineSearchParams::new(0.3, 0.7);
+        let ls = GuardedLineSearch::new(0.3, 0.7).unwrap();
 
-        let center = NewtonParams::new(1e-8, lsp.clone(), 128, 1024);
-        let params = BarrierParams::new(1.0, 10.0, 1e-3, center);
+        let center = NewtonsMethod::new(1e-8, ls.clone(), 128, 1024).unwrap();
+        let params = BarrierMethod::new(1e-3, 10.0, 1e-8, center).unwrap();
 
-        let aux_center = NewtonParams::new(1e-5, lsp, 4, 16);
-        let aux_params = BarrierParams::new(1e-3, 10.0, 1e-1, aux_center);
+        let aux_center = NewtonsMethod::new(1e-5, ls, 16, 32).unwrap();
+        let aux_params = BarrierMethod::new(1e-3, 1.5, 1e-3, aux_center).unwrap();
 
-        let (a, b) = prob.solve(&params, &aux_params);
+        let inf_ipm = InfeasibleIpm::new(aux_params, params);
+
+        let (a, b) = prob.solve(&inf_ipm).unwrap();
 
         assert!((a[0] + 2.0).abs() < 1e-3); // we specified a tolerance of 1e-3
         assert!((a[1] + 0.0).abs() < 1e-3);
